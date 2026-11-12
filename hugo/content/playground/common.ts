@@ -261,7 +261,6 @@ async function getFreshLangiumWrapper(htmlElement: HTMLElement): Promise<MonacoE
  * Document change listener for modified DSL programs
  */
 let dslDocumentChangeListener: Disposable;
-let dslModelChangeListener: Disposable;
 
 /**
  * Helper for registering to receive new ASTs from parsed DSL programs
@@ -271,25 +270,12 @@ function registerForDocumentChanges(dslClient: any | undefined) {
   if (dslDocumentChangeListener) {
     dslDocumentChangeListener.dispose();
   }
-  if (dslModelChangeListener) {
-    dslModelChangeListener.dispose();
-  }
-
-  const model = dslWrapper?.getModel();
-  if (!model) {
-    throw new Error('Failed to retrieve DSL editor model');
-  }
-
-  // Persist every edit, including edits that cannot be parsed yet.
-  dslModelChangeListener = model.onDidChangeContent(() => {
-    currentDSLContent = model.getValue();
-  });
 
   // register to receive new ASTs from parsed DSL programs
   dslDocumentChangeListener = dslClient!.onNotification('browser/DocumentChange', (resp: DocumentChangeResponse) => {
 
     // retrieve existing code from the model
-    currentDSLContent = model.getValue();
+    currentDSLContent = dslWrapper?.getModel()?.getValue() as string;
 
     // delay changes by 200ms, to avoid getting too many intermediate states
     throttle(2, languageUpdateDelay, () => {
