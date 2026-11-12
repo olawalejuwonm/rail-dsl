@@ -1,12 +1,8 @@
-# Deploy only the playground folder to GitHub Pages
 name: Deploy playground to Pages
 
 on:
   push:
     branches: ["main"]
-    paths:
-      - "playground/**"
-      - ".github/workflows/static.yml"
   workflow_dispatch:
 
 permissions:
@@ -29,14 +25,34 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload playground
+      - name: Verify deployment folder
+        run: |
+          test -d hugo/public
+          test -f hugo/public/index.html
+
+      - name: Upload built website
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./playground"
+          path: "./hugo/public"
 
       - name: Deploy to GitHub Pages
         id: deployment
