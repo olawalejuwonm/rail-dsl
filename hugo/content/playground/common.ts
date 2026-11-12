@@ -36,6 +36,32 @@ let currentGrammarContent = '';
 
 let currentDSLContent = '';
 
+const grammarStorageKey = 'playground-grammar';
+const contentStorageKey = 'playground-content';
+let dslContentChangeListener: { dispose(): void } | undefined;
+
+function getStoredContent(key: string): string | undefined {
+  try {
+    return localStorage.getItem(key) ?? undefined;
+  } catch (e) {
+    console.error(`Failed to read playground content from localStorage: ${e}`);
+    return undefined;
+  }
+}
+
+function persistPlaygroundContent(): void {
+  try {
+    localStorage.setItem(grammarStorageKey, currentGrammarContent);
+    localStorage.setItem(contentStorageKey, currentDSLContent);
+  } catch (e) {
+    console.error(`Failed to persist playground content to localStorage: ${e}`);
+  }
+}
+
+function schedulePersistPlaygroundContent(): void {
+  throttle(3, languageUpdateDelay, persistPlaygroundContent);
+}
+
 /**
  * DSL wrapper, allowing us to quickly access the current in-model code
  */
@@ -92,6 +118,15 @@ export async function setupPlayground(
   currentGrammarContent = HelloWorldGrammar;
   currentDSLContent = DSLInitialContent;
 
+  const storedGrammar = getStoredContent(grammarStorageKey);
+  const storedContent = getStoredContent(contentStorageKey);
+  if (storedGrammar !== undefined) {
+    currentGrammarContent = storedGrammar;
+  }
+  if (storedContent !== undefined) {
+    currentDSLContent = storedContent;
+  }
+
   // handle to a Monaco language client instance for the DSL (program) editor
   let dslClient;
 
@@ -107,6 +142,14 @@ export async function setupPlayground(
 
   // setup langium wrapper
   const langiumWrapper = await getFreshLangiumWrapper(leftEditor);
+  const grammarModel = langiumWrapper.getModel();
+  if (!grammarModel) {
+    throw new Error('Failed to retrieve grammar editor model');
+  }
+  grammarModel.onDidChangeContent(() => {
+    currentGrammarContent = grammarModel.getValue();
+    schedulePersistPlaygroundContent();
+  });
 
   // setup DSL wrapper
   await setupDSLWrapper().catch((e) => {
@@ -131,6 +174,7 @@ export async function setupPlayground(
 
     // extract & update current grammar
     currentGrammarContent = resp.content;
+    schedulePersistPlaygroundContent();
 
     if (resp.diagnostics.filter(d => d.severity === 1).length) {
       // error in the grammar, report an error & stop here
@@ -171,6 +215,8 @@ export async function setupPlayground(
    * Helper to configure & retrieve a fresh DSL wrapper
    */
   async function setupDSLWrapper(): Promise<void> {
+    dslContentChangeListener?.dispose();
+
     // get a fresh DSL wrapper
     dslWrapper = await getFreshDSLWrapper(rightEditor, "txt", currentDSLContent, currentGrammarContent);
 
@@ -179,6 +225,15 @@ export async function setupPlayground(
     if (!dslClient) {
       throw new Error('Failed to retrieve fresh DSL LS client');
     }
+
+    const dslModel = dslWrapper.getModel();
+    if (!dslModel) {
+      throw new Error('Failed to retrieve DSL editor model');
+    }
+    dslContentChangeListener = dslModel.onDidChangeContent(() => {
+      currentDSLContent = dslModel.getValue();
+      schedulePersistPlaygroundContent();
+    });
 
     // re-register
     registerForDocumentChanges(dslClient);
